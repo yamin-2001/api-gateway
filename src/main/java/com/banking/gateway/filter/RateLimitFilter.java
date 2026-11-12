@@ -1,6 +1,7 @@
 package com.banking.gateway.filter;
 
 import com.banking.gateway.config.RateLimitProperties;
+import com.banking.gateway.exception.GatewayErrorWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -17,10 +18,7 @@ import reactor.core.publisher.Mono;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 
-/**
- * Limits how often one IP address may call the sensitive auth endpoints. Counters live in Redis
- * and reset when their window ends.
- */
+
 @Component
 public class RateLimitFilter implements GlobalFilter, Ordered {
 

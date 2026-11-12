@@ -29,11 +29,15 @@ spring:
       password: ${REDIS_PASSWORD}
       timeout: 2s
       connect-timeout: 2s
-
+  reactor:
+    context-propagation: auto
   cloud:
     gateway:
       server:
         webflux:
+          httpclient:
+            connect-timeout: 3000
+            response-timeout: 15s
           routes:
             - id: user-service-auth
               uri: lb://user-service
@@ -73,6 +77,9 @@ spring:
                   - Content-Type
                   - Accept
                 maxAge: 3600
+                exposedHeaders:
+                  - X-Trace-Id
+                  - Retry-After
 
 eureka:
   client:
@@ -87,6 +94,12 @@ eureka:
     prefer-ip-address: true
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+      tracing:
+        endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
   server:
     port: 18080
   endpoints:
@@ -97,3 +110,18 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        gateway.requests: true
+logging:
+  structured:
+    format:
+      file: logstash
+    json:
+      add:
+        service: ${spring.application.name}
+  file:
+    name: ${BANKING_LOG_DIR:${user.home}/banking-logs}/${spring.application.name}.json
+  logback:
+    rollingpolicy:
+      max-file-size: 20MB
+      max-history: 3
+      total-size-cap: 200MB
