@@ -4,7 +4,7 @@ server:
 app:
   jwt:
     # MUST be identical to user-service. At least 32 characters.
-    secret: ${JWT_SECRET:REDACTED}
+    secret: ${JWT_SECRET}
   rate-limit:
     rules:
       - path: /api/auth/register
@@ -21,7 +21,9 @@ spring:
     name: api-gateway
 
   config:
-    import: optional:file:.env[.properties]
+    import:
+      - "optional:file:../.env[.properties]"
+      - "optional:file:.env[.properties]"
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
