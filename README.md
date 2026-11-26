@@ -256,7 +256,7 @@ Gateway 4.2+ *"server"* namespace, **not** the older `spring.cloud.gateway.route
 
 | Name | Default | Meaning |
 |---|---|---|
-| `app.jwt.secret` | `${JWT_SECRET:REDACTED}` | The HMAC key used to verify the bearer token. The in-file comment says: *"MUST be identical to user-service. At least 32 characters."* |
+| `app.jwt.secret` | `${JWT_SECRET}` | The HMAC key used to verify the bearer token. The in-file comment says: *"MUST be identical to user-service. At least 32 characters."* |
 | `app.rate-limit.rules[0].path` | `/api/auth/register` | The path the rule applies to |
 | `app.rate-limit.rules[0].limit` | `10` | Requests per window |
 | `app.rate-limit.rules[0].window-seconds` | `3600` | 1 hour |
@@ -285,7 +285,7 @@ public record RateLimitProperties(List<Rule> rules) {
 
 | Name | Default | Meaning |
 |---|---|---|
-| `JWT_SECRET` | `REDACTED` | The JWT signing key. **Must be identical to the user-service secret.** |
+| `JWT_SECRET` | *(no default — mandatory)* | The JWT signing key. **Must be identical to the user-service secret.** |
 | `REDIS_PASSWORD` | *(none)* | The Redis password. **Mandatory** — the gateway fails to start without it |
 | `REDIS_HOST` | `127.0.0.1` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
@@ -300,20 +300,20 @@ public record RateLimitProperties(List<Rule> rules) {
 
 #### The `JWT_SECRET` trap — read this before you start the gateway
 
-* The gateway's own YAML default is `REDACTED`.
+* The gateway's own YAML has no default — `JWT_SECRET` is mandatory, and the service refuses to start without it.
 * The **user-service** default is different:
-  `REDACTED`
+  `<your JWT secret>`
   (`user-service/src/main/resources/application.yaml:61`).
 * **The two defaults do not match.** In the integrated system this does not bite, because
   `api-gateway/.env` sets
-  `JWT_SECRET=REDACTED`
+  `JWT_SECRET=<your JWT secret>`
   — the *same* value as the user-service default — and `api-gateway/.env` is imported via
   `spring.config.import: optional:file:.env[.properties]` when the gateway is started with
   `api-gateway/` as the working directory. `run-all.sh` does exactly that (`pushd "$ROOT/$name"`).
 * A JWT signed with the *user-service* secret is **accepted** by the gateway
   (`GET /api/accounts` → `200`), while a JWT signed with the *gateway's own YAML default* is
   **rejected** with `401 "Invalid or expired token"`.
-* `api-gateway/.env` also sets `REDIS_PASSWORD=REDACTED`.
+* `api-gateway/.env` also sets `REDIS_PASSWORD`, which the rate limiter requires.
 * `user-service/.env` sets the same `JWT_SECRET`, so both services agree.
 * Token lifetime: `app.jwt.expiration-ms: 3600000` (**60 minutes**) in the user service.
 
@@ -554,8 +554,8 @@ gateway had no instance for the route yet).
 ### Environment variables to export
 
 ```bash
-export REDIS_PASSWORD='REDACTED'
-export JWT_SECRET='REDACTED'
+export REDIS_PASSWORD='<your redis password>'
+export JWT_SECRET='<your JWT secret>'
 export REDIS_HOST=127.0.0.1
 export REDIS_PORT=6379
 export SERVER_PORT=8080
@@ -671,7 +671,7 @@ curl -i -X OPTIONS -H 'Origin: http://localhost:3000' \
 | Knob | Default | Change it when |
 |---|---|---|
 | `server.port` | `8080` | Port 8080 is taken on your machine |
-| `app.jwt.secret` (`JWT_SECRET`) | `REDACTED` | Always — it must match the user-service secret |
+| `app.jwt.secret` (`JWT_SECRET`) | *(unset)* | Always — it must match the user-service secret |
 | `spring.data.redis.password` (`REDIS_PASSWORD`) | *(no default)* | Always — the gateway will not start without it |
 | `spring.data.redis.host` / `.port` | `127.0.0.1` / `6379` | Your Redis runs elsewhere |
 | `app.rate-limit.rules[0]` (`/api/auth/register`) | `10` per `3600` s | Register is being hammered by bots |
@@ -686,8 +686,8 @@ curl -i -X OPTIONS -H 'Origin: http://localhost:3000' \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| The gateway does not start, with a Redis error | `spring.data.redis.password` has no default | `export REDIS_PASSWORD=...` (the root `run.env` sets it to `REDACTED`) |
-| Every protected route answers `401 Invalid or expired token` | The gateway and the user service use **different** secrets — the gateway's YAML default is `REDACTED`, the user-service's is `78f2b810…5ccb` | Set `JWT_SECRET` to the **same** value in both services, or start the gateway from `api-gateway/` so `api-gateway/.env` is picked up |
+| The gateway does not start, with a Redis error | `spring.data.redis.password` has no default | `export REDIS_PASSWORD=...` (or set it in the root `.env`) |
+| Every protected route answers `401 Invalid or expired token` | The gateway and the user service use **different** secrets — neither has a default any more, so the two `JWT_SECRET` values have to be set by hand | Set `JWT_SECRET` to the **same** value in both services, or start the gateway from `api-gateway/` so `api-gateway/.env` is picked up |
 | Every protected route answers `401 Missing or invalid Authorization header` | The header does not start with the literal `Bearer ` (capital B, trailing space), or the path is not one of the three public ones | Check the header format; note that `/api/auth/login/extra` is **not** public |
 | `503 No servers available for service: user-service` | The gateway's registry cache is empty or stale | Wait for the next fetch (every 5 s) and check that the service is registered in Eureka on port 8761 |
 | `503 No servers available for service: ...` right after a restart | The load balancer cache was still empty | This is exactly what `registry-fetch-interval-seconds: 5` shortens; it is a window of a few seconds |
@@ -702,10 +702,11 @@ curl -i -X OPTIONS -H 'Origin: http://localhost:3000' \
 
 ## Notes and Known Limitations
 
-- **The JWT secret defaults do not match between the gateway and the user service.** The running
-  system only works because `api-gateway/.env` and `user-service/.env` both set
-  `JWT_SECRET=78f2b810…5ccb`. Anyone starting the gateway from another working directory will get
-  `401` on every protected route.
+- **`JWT_SECRET` has to be set to the same value in the gateway and the user service.** Neither has a
+  built-in default any more, so the gateway refuses to start without the variable, and the two
+  services must agree on it or every protected route answers `401`. Anyone starting the gateway from
+  another working directory has to export it themselves or point `spring.config.import` at the
+  right `.env`.
 - **The gateway performs no authorization.** There is no `hasRole` / `hasAuthority` check anywhere
   in `api-gateway/`, and no `403` can ever come from the gateway. `X-User-Roles` is injected but
   **no service reads it**.
